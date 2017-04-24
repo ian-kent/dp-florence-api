@@ -16,7 +16,8 @@ func generateRandomBytes(n int) ([]byte, error) {
 	return b, nil
 }
 
-func generateRandomString(s int) (string, error) {
+// GenerateRandomString ...
+func GenerateRandomString(s int) (string, error) {
 	b, err := generateRandomBytes(s)
 	return base64.URLEncoding.EncodeToString(b), err
 }
