@@ -29,9 +29,10 @@ type User struct {
 
 // Token ...
 type Token struct {
-	Token   string    `bson:"_id,omitempty"`
-	Email   string    `bson:"email"`
-	Created time.Time `bson:"created"`
+	Token      string    `bson:"_id,omitempty"`
+	Email      string    `bson:"email"`
+	Created    time.Time `bson:"created"`
+	LastActive time.Time `bson:"last_active"`
 }
 
 // Role ...

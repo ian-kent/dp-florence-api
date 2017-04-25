@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"strconv"
@@ -72,9 +73,32 @@ func main() {
 	root.Methods("GET").Path("/permission").Handler(authMw(floServer.Permissions))
 
 	root.Methods("POST").Path("/ping").HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		// TODO output real stuff here
+		type pingResponse struct {
+			HasSession bool       `json:"hasSession"`
+			ExpiryDate *time.Time `json:"sessionExpiryDate,omitempty"`
+		}
+		pR := pingResponse{false, nil}
+
+		// FIXME copied from auth/auth.go
+		t := req.Header.Get("X-Florence-Token")
+		log.DebugR(req, "auth", log.Data{"token": t})
+
+		_, tok, err := mongoDB.LoadUserFromToken(t)
+		if err == nil {
+			pR.HasSession = true
+			expiry := tok.LastActive.Add(time.Minute * 60)
+			pR.ExpiryDate = &expiry
+		}
+
+		b, err := json.Marshal(&pR)
+		if err != nil {
+			log.ErrorR(req, err, nil)
+			w.WriteHeader(500)
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"hasSession": true, sessionExpiryDate: "2017-05-01T01:39:27.061Z"}`))
+		w.Write(b)
 	})
 
 	// root.Methods("GET").Path("/").Handler(authMw(func(w http.ResponseWriter, req *http.Request) {}))

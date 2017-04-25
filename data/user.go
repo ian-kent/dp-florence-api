@@ -229,7 +229,7 @@ func (m *MongoDB) ValidateLogin(email, password string) (string, error) {
 		return "", err
 	}
 
-	err = sess.DB("florence").C("tokens").Insert(model.Token{Email: email, Token: token, Created: time.Now()})
+	err = sess.DB("florence").C("tokens").Insert(model.Token{Email: email, Token: token, Created: time.Now(), LastActive: time.Now()})
 	if err != nil {
 		return "", err
 	}
@@ -238,15 +238,24 @@ func (m *MongoDB) ValidateLogin(email, password string) (string, error) {
 }
 
 // LoadUserFromToken ...
-func (m *MongoDB) LoadUserFromToken(token string) (model.User, error) {
+func (m *MongoDB) LoadUserFromToken(token string) (model.User, model.Token, error) {
 	sess := m.New()
 	defer sess.Close()
 
 	var t model.Token
 	err := sess.DB("florence").C("tokens").Find(bson.M{"_id": token}).One(&t)
 	if err != nil {
-		return model.User{}, ErrInvalidToken
+		return model.User{}, model.Token{}, ErrInvalidToken
 	}
 
-	return m.GetUser(t.Email)
+	u, err := m.GetUser(t.Email)
+	return u, t, err
+}
+
+// UpdateTokenLastActive ...
+func (m *MongoDB) UpdateTokenLastActive(token string) error {
+	sess := m.New()
+	defer sess.Close()
+
+	return sess.DB("florence").C("tokens").Update(bson.M{"_id": token}, bson.M{"$set": bson.M{"last_active": time.Now()}})
 }

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/ONSdigital/dp-florence-api/data"
 	"github.com/ONSdigital/dp-florence-api/data/model"
@@ -23,10 +24,23 @@ func Middleware(db *data.MongoDB) func(h http.HandlerFunc) http.Handler {
 			t := req.Header.Get("X-Florence-Token")
 			log.DebugR(req, "auth", log.Data{"token": t})
 
-			u, err := db.LoadUserFromToken(t)
+			u, tok, err := db.LoadUserFromToken(t)
 			if err != nil {
 				log.DebugR(req, "error authorising user", log.Data{"error": err})
 				w.WriteHeader(401)
+				return
+			}
+
+			if tok.LastActive.Add(time.Minute * 60).Before(time.Now()) {
+				log.DebugR(req, "token expired", nil)
+				w.WriteHeader(401)
+				return
+			}
+
+			err = db.UpdateTokenLastActive(t)
+			if err != nil {
+				log.ErrorR(req, err, nil)
+				w.WriteHeader(500)
 				return
 			}
 
