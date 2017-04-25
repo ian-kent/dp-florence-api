@@ -66,6 +66,7 @@ func main() {
 	root.Methods("GET").Path("/collectionDetails/{collection_id}").Handler(authMw(floServer.GetCollection))
 
 	root.Methods("GET").Path("/users").Handler(authMw(floServer.ListUsers))
+	root.Methods("POST").Path("/users").Handler(authMw(floServer.CreateUser))
 	root.Methods("GET").Path("/teams").Handler(authMw(floServer.ListTeams))
 	root.Methods("GET").Path("/permission").Handler(authMw(floServer.Permissions))
 
@@ -128,7 +129,7 @@ func initTest(db *data.MongoDB) {
 	}
 
 	u := model.User{Email: "florence@magicroundabout.ons.gov.uk", Name: "Florence", Password: b, Created: time.Now(), Active: true, ForcePasswordChange: true, Roles: []string{"administrator", "editor"}}
-	_, err = sess.DB("florence").C("users").Upsert(bson.M{"_id": "florence@magicroundabout.ons.gov.uk"}, u)
+	_, err = sess.DB("florence").C("users").Upsert(bson.M{"email": "florence@magicroundabout.ons.gov.uk"}, u)
 	if err != nil {
 		panic(err)
 	}

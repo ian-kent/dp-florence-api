@@ -1,6 +1,10 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"gopkg.in/mgo.v2/bson"
+)
 
 const (
 	// PermAdministrator ...
@@ -12,26 +16,28 @@ const (
 
 // User ...
 type User struct {
-	Email               string    `bson:"_id,omitempty" json:"email"`
-	Name                string    `bson:"name" json:"name"`
-	Password            []byte    `bson:"password" json:"password"`
-	Created             time.Time `bson:"created" json:"created"`
-	ForcePasswordChange bool      `bson:"force_password_change" json:"force_password_change"`
-	Active              bool      `bson:"active" json:"active"`
-	Roles               []string  `bson:"roles" json:"roles"`
+	ID                  bson.ObjectId `bson:"_id,omitempty"`
+	Email               string        `bson:"email"`
+	Name                string        `bson:"name"`
+	Password            []byte        `bson:"password"`
+	Created             time.Time     `bson:"created"`
+	ForcePasswordChange bool          `bson:"force_password_change"`
+	Active              bool          `bson:"active"`
+	Roles               []string      `bson:"roles"`
+	VerificationCode    string        `bson:"verification_code"`
 }
 
 // Token ...
 type Token struct {
-	Token   string    `bson:"_id,omitempty" json:"token"`
-	Email   string    `bson:"email" json:"email"`
-	Created time.Time `bson:"created" json:"created"`
+	Token   string    `bson:"_id,omitempty"`
+	Email   string    `bson:"email"`
+	Created time.Time `bson:"created"`
 }
 
 // Role ...
 type Role struct {
-	ID   string `bson:"_id" json:"id,omitempty"`
-	Name string `bson:"name" json:"name"`
+	ID   string `bson:"_id"`
+	Name string `bson:"name"`
 
 	Permissions map[string]Permission `bson:"permissions" json:"permissions"`
 }

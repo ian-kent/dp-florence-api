@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
-	"io/ioutil"
 	"net/http"
 
 	"github.com/ONSdigital/dp-florence-api/data"
@@ -17,23 +15,14 @@ type passwordInput struct {
 
 // ChangePassword ...
 func (s *FloServer) ChangePassword(w http.ResponseWriter, req *http.Request) {
-	b, err := ioutil.ReadAll(req.Body)
-	if err != nil {
+	var input passwordInput
+	if err := unmarshal(req, &input); err != nil {
 		log.DebugR(req, "error reading body", log.Data{"error": err})
 		w.WriteHeader(400)
 		return
 	}
 
-	var input passwordInput
-	err = json.Unmarshal(b, &input)
-	if err != nil {
-		log.DebugR(req, "error unmarshaling data", log.Data{"error": err})
-		w.WriteHeader(400)
-		return
-	}
-
-	err = s.DB.ChangePassword(input.Email, input.OldPassword, input.Password)
-	if err != nil {
+	if err := s.DB.ChangePassword(input.Email, input.OldPassword, input.Password); err != nil {
 		log.DebugR(req, "error changing password", log.Data{"error": err})
 
 		if err == data.ErrUserNotFound || err == data.ErrUserInactive {

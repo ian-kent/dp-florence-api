@@ -2,6 +2,7 @@ package data
 
 import (
 	"errors"
+	"net/smtp"
 	"time"
 
 	"github.com/ONSdigital/dp-florence-api/data/model"
@@ -34,6 +35,9 @@ var ErrCollectionAlreadyExists = errors.New("collection already exists")
 // ErrCollectionNotFound ...
 var ErrCollectionNotFound = errors.New("collection not found")
 
+// ErrUserExists ...
+var ErrUserExists = errors.New("user already exists")
+
 // MongoDB ...
 type MongoDB struct {
 	*mgo.Session
@@ -64,6 +68,54 @@ func (m *MongoDB) GetUsers() ([]model.User, error) {
 	return u, nil
 }
 
+// CreateUser ...
+func (m *MongoDB) CreateUser(creatorID, email, name string) (err error) {
+	_, err = m.GetUser(email)
+	if err != ErrUserNotFound {
+		return err
+	}
+
+	sess := m.New()
+	defer sess.Close()
+
+	verificationCode, err := GenerateRandomString(32)
+	if err != nil {
+		return err
+	}
+
+	u := model.User{
+		ID:                  bson.NewObjectId(),
+		Active:              false,
+		Created:             time.Now(),
+		Email:               email,
+		ForcePasswordChange: true,
+		Name:                name,
+		VerificationCode:    verificationCode,
+	}
+
+	err = sess.DB("florence").C("users").Insert(&u)
+	if err != nil {
+		return err
+	}
+
+	err = m.createAuditEvent(creatorID, AuditEventContextUser, u.ID.Hex(), AuditEventUserCreated, AuditReasonNone)
+	if err != nil {
+		return err
+	}
+
+	err = smtp.SendMail("localhost:1025", nil, "florence@magicroundabout.ons.gov.uk", []string{email}, []byte(`Verify: `+verificationCode))
+	if err != nil {
+		return err
+	}
+
+	err = m.createAuditEvent(creatorID, AuditEventContextUser, u.ID.Hex(), AuditEventVerificationEmailSent, AuditReasonNone)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // GetUser ...
 func (m *MongoDB) GetUser(email string) (model.User, error) {
 	sess := m.New()
@@ -71,7 +123,7 @@ func (m *MongoDB) GetUser(email string) (model.User, error) {
 
 	var u model.User
 
-	err := sess.DB("florence").C("users").Find(bson.M{"_id": email}).One(&u)
+	err := sess.DB("florence").C("users").Find(bson.M{"email": email}).One(&u)
 	if err != nil {
 		if err == mgo.ErrNotFound {
 			return model.User{}, ErrUserNotFound
@@ -152,6 +204,10 @@ func (m *MongoDB) CreateCollectionEvent(event, collectionID, email string) error
 func (m *MongoDB) ChangePassword(email, old, new string) error {
 	u, err := m.GetUser(email)
 	if err != nil {
+		err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, email, AuditEventPasswordChangeFailed, AuditReasonUserNotFound)
+		if err != nil {
+			return err
+		}
 		return err
 	}
 
@@ -159,11 +215,19 @@ func (m *MongoDB) ChangePassword(email, old, new string) error {
 	defer sess.Close()
 
 	if !u.Active {
+		err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventPasswordChangeFailed, AuditReasonUserInactive)
+		if err != nil {
+			return err
+		}
 		return ErrUserInactive
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(old))
 	if err != nil {
+		err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventPasswordChangeFailed, AuditReasonInvalidPassword)
+		if err != nil {
+			return err
+		}
 		return ErrInvalidPassword
 	}
 
@@ -172,7 +236,12 @@ func (m *MongoDB) ChangePassword(email, old, new string) error {
 		return err
 	}
 
-	err = sess.DB("florence").C("users").Update(bson.M{"_id": email}, bson.M{"$set": bson.M{"password": b, "force_password_change": false}})
+	err = sess.DB("florence").C("users").Update(bson.M{"_id": u.ID}, bson.M{"$set": bson.M{"password": b, "force_password_change": false}})
+	if err != nil {
+		return err
+	}
+
+	err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventPasswordChangeOK, AuditReasonNone)
 	if err != nil {
 		return err
 	}
@@ -184,6 +253,10 @@ func (m *MongoDB) ChangePassword(email, old, new string) error {
 func (m *MongoDB) ValidateLogin(email, password string) (string, error) {
 	u, err := m.GetUser(email)
 	if err != nil {
+		err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, email, AuditEventUserLoginFailed, AuditReasonUserNotFound)
+		if err != nil {
+			return "", err
+		}
 		return "", err
 	}
 
@@ -191,19 +264,36 @@ func (m *MongoDB) ValidateLogin(email, password string) (string, error) {
 	defer sess.Close()
 
 	if !u.Active {
+		err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventUserLoginFailed, AuditReasonUserInactive)
+		if err != nil {
+			return "", err
+		}
 		return "", ErrUserInactive
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password))
 	if err != nil {
+		err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventUserLoginFailed, AuditReasonInvalidPassword)
+		if err != nil {
+			return "", err
+		}
 		return "", ErrInvalidPassword
 	}
 
 	if u.ForcePasswordChange {
+		err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventUserLoginFailed, AuditReasonPasswordChangeRequired)
+		if err != nil {
+			return "", err
+		}
 		return "", ErrForcePasswordChange
 	}
 
 	token, err := GenerateRandomString(32)
+	if err != nil {
+		return "", err
+	}
+
+	err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventUserLoginOK, AuditReasonNone)
 	if err != nil {
 		return "", err
 	}
@@ -216,8 +306,8 @@ func (m *MongoDB) ValidateLogin(email, password string) (string, error) {
 	return token, nil
 }
 
-// LoadUser ...
-func (m *MongoDB) LoadUser(token string) (model.User, error) {
+// LoadUserFromToken ...
+func (m *MongoDB) LoadUserFromToken(token string) (model.User, error) {
 	sess := m.New()
 	defer sess.Close()
 

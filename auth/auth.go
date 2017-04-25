@@ -23,7 +23,7 @@ func Middleware(db *data.MongoDB) func(h http.HandlerFunc) http.Handler {
 			t := req.Header.Get("X-Florence-Token")
 			log.DebugR(req, "auth", log.Data{"token": t})
 
-			u, err := db.LoadUser(t)
+			u, err := db.LoadUserFromToken(t)
 			if err != nil {
 				log.DebugR(req, "error authorising user", log.Data{"error": err})
 				w.WriteHeader(401)
@@ -35,38 +35,6 @@ func Middleware(db *data.MongoDB) func(h http.HandlerFunc) http.Handler {
 		})
 	}
 }
-
-// // MustHaveRole ...
-// func MustHaveRole(db *data.MongoDB, role string) func(h http.HandlerFunc) http.Handler {
-// 	return func(h http.HandlerFunc) http.Handler {
-// 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-// 			u, ok := UserFromContext(req.Context())
-// 			if !ok {
-// 				w.WriteHeader(401)
-// 				return
-// 			}
-
-// 			log.DebugR(req, "checking for role", log.Data{"role": role})
-
-// 			var hasRole bool
-// 			for _, r := range u.Roles {
-// 				if r == role {
-// 					hasRole = true
-// 					break
-// 				}
-// 			}
-
-// 			if !hasRole {
-// 				log.DebugR(req, "role not found", log.Data{"role": role})
-// 				w.WriteHeader(403)
-// 				return
-// 			}
-
-// 			log.DebugR(req, "user has role", nil)
-// 			h(w, req)
-// 		})
-// 	}
-// }
 
 func withContext(req *http.Request, t string, u *model.User) context.Context {
 	return context.WithValue(context.WithValue(req.Context(), token, t), user, u)
@@ -82,4 +50,25 @@ func UserFromContext(ctx context.Context) (u *model.User, ok bool) {
 func TokenFromContext(ctx context.Context) (token string, ok bool) {
 	u, ok := ctx.Value(token).(string)
 	return u, ok
+}
+
+// HasPermission ...
+func HasPermission(ctx context.Context, db *data.MongoDB, perm string) (ok bool, err error) {
+	u, ok := UserFromContext(ctx)
+	if !ok {
+		return false, nil
+	}
+
+	for _, r := range u.Roles {
+		role, err := db.GetRole(r)
+		if err != nil {
+			return false, err
+		}
+
+		if _, ok := role.Permissions[perm]; ok {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
