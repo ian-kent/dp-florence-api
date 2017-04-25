@@ -47,6 +47,7 @@ func main() {
 
 	floServer := &handlers.FloServer{DB: mongoDB}
 	authMw := auth.Middleware(mongoDB)
+	adminMw := auth.WithPermission(mongoDB, model.PermAdministrator)
 
 	router := mux.NewRouter()
 	srv := server.New(bindAddr, router)
@@ -66,7 +67,7 @@ func main() {
 	root.Methods("GET").Path("/collectionDetails/{collection_id}").Handler(authMw(floServer.GetCollection))
 
 	root.Methods("GET").Path("/users").Handler(authMw(floServer.ListUsers))
-	root.Methods("POST").Path("/users").Handler(authMw(floServer.CreateUser))
+	root.Methods("POST").Path("/users").Handler(adminMw(floServer.CreateUser))
 	root.Methods("GET").Path("/teams").Handler(authMw(floServer.ListTeams))
 	root.Methods("GET").Path("/permission").Handler(authMw(floServer.Permissions))
 

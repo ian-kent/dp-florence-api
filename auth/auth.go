@@ -36,6 +36,28 @@ func Middleware(db *data.MongoDB) func(h http.HandlerFunc) http.Handler {
 	}
 }
 
+// WithPermission ...
+func WithPermission(db *data.MongoDB, perm string) func(h http.HandlerFunc) http.Handler {
+	return func(h http.HandlerFunc) http.Handler {
+		return Middleware(db)(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ok, err := HasPermission(req.Context(), db, perm)
+			if err != nil {
+				log.ErrorR(req, err, nil)
+				w.WriteHeader(500)
+				return
+			}
+
+			if !ok {
+				log.DebugR(req, "user needs administrator permission", nil)
+				w.WriteHeader(403)
+				return
+			}
+
+			h.ServeHTTP(w, req)
+		}))
+	}
+}
+
 func withContext(req *http.Request, t string, u *model.User) context.Context {
 	return context.WithValue(context.WithValue(req.Context(), token, t), user, u)
 }
