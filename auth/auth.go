@@ -18,30 +18,33 @@ const (
 )
 
 // Middleware is the auth middleware
-func Middleware(db *data.MongoDB) func(h http.HandlerFunc) http.Handler {
+func Middleware(db *data.MongoDB, requireValid bool) func(h http.HandlerFunc) http.Handler {
 	return func(h http.HandlerFunc) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			t := req.Header.Get("X-Florence-Token")
 			log.DebugR(req, "auth", log.Data{"token": t})
 
 			u, tok, err := db.LoadUserFromToken(t)
-			if err != nil {
-				log.DebugR(req, "error authorising user", log.Data{"error": err})
-				w.WriteHeader(401)
-				return
-			}
 
-			if tok.LastActive.Add(time.Minute * 60).Before(time.Now()) {
-				log.DebugR(req, "token expired", nil)
-				w.WriteHeader(401)
-				return
-			}
+			if requireValid {
+				if err != nil {
+					log.DebugR(req, "error authorising user", log.Data{"error": err})
+					w.WriteHeader(401)
+					return
+				}
 
-			err = db.UpdateTokenLastActive(t)
-			if err != nil {
-				log.ErrorR(req, err, nil)
-				w.WriteHeader(500)
-				return
+				if tok.LastActive.Add(time.Minute * 60).Before(time.Now()) {
+					log.DebugR(req, "token expired", nil)
+					w.WriteHeader(401)
+					return
+				}
+
+				err = db.UpdateTokenLastActive(t)
+				if err != nil {
+					log.ErrorR(req, err, nil)
+					w.WriteHeader(500)
+					return
+				}
 			}
 
 			log.DebugR(req, "user loaded", log.Data{"user": u})
@@ -53,7 +56,7 @@ func Middleware(db *data.MongoDB) func(h http.HandlerFunc) http.Handler {
 // WithPermission ...
 func WithPermission(db *data.MongoDB, perm string) func(h http.HandlerFunc) http.Handler {
 	return func(h http.HandlerFunc) http.Handler {
-		return Middleware(db)(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		return Middleware(db, true)(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			ok, err := HasPermission(req.Context(), db, perm)
 			if err != nil {
 				log.ErrorR(req, err, nil)

@@ -47,7 +47,8 @@ func main() {
 	}
 
 	floServer := &handlers.FloServer{DB: mongoDB}
-	authMw := auth.Middleware(mongoDB)
+	authMw := auth.Middleware(mongoDB, true)
+	authMwMaybe := auth.Middleware(mongoDB, false)
 	adminMw := auth.WithPermission(mongoDB, model.PermAdministrator)
 
 	router := mux.NewRouter()
@@ -58,7 +59,7 @@ func main() {
 	var root = router
 
 	root.Methods("POST").Path("/login").HandlerFunc(floServer.Login)
-	root.Methods("POST").Path("/password").HandlerFunc(floServer.ChangePassword)
+	root.Methods("POST").Path("/password").Handler(authMwMaybe(floServer.ChangePassword))
 
 	root.Methods("GET").Path("/master/{uri:.*}").Handler(authMw(floServer.MasterData))
 
@@ -70,7 +71,8 @@ func main() {
 	root.Methods("GET").Path("/users").Handler(authMw(floServer.ListUsers))
 	root.Methods("POST").Path("/users").Handler(adminMw(floServer.CreateUser))
 	root.Methods("GET").Path("/teams").Handler(authMw(floServer.ListTeams))
-	root.Methods("GET").Path("/permission").Handler(authMw(floServer.Permissions))
+	root.Methods("GET").Path("/permission").Handler(authMw(floServer.GetPermissions))
+	root.Methods("POST").Path("/permission").Handler(adminMw(floServer.UpdatePermissions))
 
 	root.Methods("POST").Path("/ping").HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		type pingResponse struct {
@@ -80,6 +82,7 @@ func main() {
 		pR := pingResponse{false, nil}
 
 		// FIXME copied from auth/auth.go
+		// TODO update to use authMwMaybe?
 		t := req.Header.Get("X-Florence-Token")
 		log.DebugR(req, "auth", log.Data{"token": t})
 

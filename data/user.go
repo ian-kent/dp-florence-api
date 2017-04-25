@@ -64,7 +64,7 @@ func (m *MongoDB) CreateUser(creatorID, email, name string) (err error) {
 
 	u := model.User{
 		ID:                  bson.NewObjectId(),
-		Active:              false,
+		Active:              true,
 		Created:             time.Now(),
 		Email:               email,
 		ForcePasswordChange: true,
@@ -258,4 +258,23 @@ func (m *MongoDB) UpdateTokenLastActive(token string) error {
 	defer sess.Close()
 
 	return sess.DB("florence").C("tokens").Update(bson.M{"_id": token}, bson.M{"$set": bson.M{"last_active": time.Now()}})
+}
+
+// SetUserRoles ...
+func (m *MongoDB) SetUserRoles(creatorID, email string, roles ...string) error {
+	u, err := m.GetUser(email)
+	if err != nil {
+		return err
+	}
+
+	sess := m.New()
+	defer sess.Close()
+
+	err = sess.DB("florence").C("users").Update(bson.M{"email": email}, bson.M{"$set": bson.M{"roles": roles}})
+	if err != nil {
+		return err
+	}
+
+	// FIXME store user roles?
+	return m.createAuditEvent(creatorID, AuditEventContextUser, u.ID.Hex(), AuditEventUserRolesUpdated, AuditReasonNone)
 }
