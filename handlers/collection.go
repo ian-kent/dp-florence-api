@@ -59,6 +59,18 @@ type getCollectionOutput struct {
 	PublishComplete       bool                          `json:"publishComplete"`
 }
 
+type getCollectionBrowseTreeOutput struct {
+	URI          string                                   `json:"uri"`
+	Description  getCollectionBrowseTreeOutputDescription `json:"description"`
+	Children     []getCollectionBrowseTreeOutput          `json:"children"`
+	DeleteMarker bool                                     `json:"deleteMarker"`
+	ContentPath  string                                   `json:"contentPath"`
+}
+
+type getCollectionBrowseTreeOutputDescription struct {
+	Title string `json:"title"`
+}
+
 /*
 200 response to create collection
 {"approvalStatus":"NOT_STARTED","publishComplete":false,"isEncrypted":true,"pendingDeletes":[],"collectionOwner":"PUBLISHING_SUPPORT","timeseriesImportFiles":[],"events":[{"date":"2017-04-24T01:49:08.096Z","type":"CREATED","email":"florence@magicroundabout.ons.gov.uk"}],"id":"test-95ad38cc6b4b5b82c0cb65b38d36b342e696c53b2f8630267fe8f20e0151b84b","name":"test","type":"manual","teams":[]}
@@ -231,5 +243,31 @@ func (s *FloServer) CreateCollection(w http.ResponseWriter, req *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(201)
+	w.Write(b)
+}
+
+// GetCollectionBrowseTree ...
+func (s *FloServer) GetCollectionBrowseTree(w http.ResponseWriter, req *http.Request) {
+	// TODO check if collection exists, or define middleware
+
+	o := getCollectionBrowseTreeOutput{
+		URI: "",
+		Description: getCollectionBrowseTreeOutputDescription{
+			Title: "master",
+		},
+		Children:     []getCollectionBrowseTreeOutput{},
+		DeleteMarker: false,
+		ContentPath:  "/",
+	}
+
+	b, err := json.Marshal(&o)
+	if err != nil {
+		log.ErrorR(req, err, nil)
+		w.WriteHeader(500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
 	w.Write(b)
 }

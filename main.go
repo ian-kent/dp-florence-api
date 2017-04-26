@@ -65,9 +65,9 @@ func main() {
 
 	root.Methods("GET").Path("/publishedCollections").Handler(authMw(floServer.ListPublishedCollections))
 	root.Methods("GET").Path("/collections").Handler(authMw(floServer.ListCollections))
-	root.Methods("POST").Path("/collection").Handler(authMw(floServer.CreateCollection))
-	root.Methods("GET").Path("/collectionDetails/{collection_id}").Handler(authMw(floServer.GetCollection))
-
+	root.Methods("POST").Path("/collections").Handler(authMw(floServer.CreateCollection))
+	root.Methods("GET").Path("/collections/{collection_id}/browse-tree").Handler(authMw(floServer.GetCollectionBrowseTree))
+	root.Methods("GET").Path("/collections/{collection_id}").Handler(authMw(floServer.GetCollection))
 	root.Methods("GET").Path("/users").Handler(authMw(floServer.ListUsers))
 	root.Methods("POST").Path("/users").Handler(adminMw(floServer.CreateUser))
 	root.Methods("GET").Path("/teams").Handler(authMw(floServer.ListTeams))
