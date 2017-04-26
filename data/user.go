@@ -3,6 +3,7 @@ package data
 import (
 	"errors"
 	"net/smtp"
+	"strings"
 	"time"
 
 	"github.com/ONSdigital/dp-florence-api/data/model"
@@ -82,7 +83,7 @@ func (m *MongoDB) CreateUser(creatorID, email, name string) (err error) {
 		return err
 	}
 
-	err = smtp.SendMail("localhost:1025", nil, "florence@magicroundabout.ons.gov.uk", []string{email}, []byte(`Verify: `+verificationCode))
+	err = smtp.SendMail("localhost:1025", nil, "florence@magicroundabout.ons.gov.uk", []string{email}, []byte(`http://localhost:8081/florence/index.html?email=`+email+`&verify=`+verificationCode))
 	if err != nil {
 		return err
 	}
@@ -133,11 +134,17 @@ func (m *MongoDB) GetRole(role string) (model.Role, error) {
 
 // ChangePassword ...
 func (m *MongoDB) ChangePassword(email, old, new string) error {
+	var verify bool
+	if strings.HasPrefix(email, "<verify>:") {
+		verify = true
+		email = strings.TrimPrefix(email, "<verify>:")
+	}
+
 	u, err := m.GetUser(email)
 	if err != nil {
-		err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, email, AuditEventPasswordChangeFailed, AuditReasonUserNotFound)
-		if err != nil {
-			return err
+		err2 := m.createAuditEvent(AuditSystemUser, AuditEventContextUser, email, AuditEventPasswordChangeFailed, AuditReasonUserNotFound)
+		if err2 != nil {
+			return err2
 		}
 		return err
 	}
@@ -146,20 +153,26 @@ func (m *MongoDB) ChangePassword(email, old, new string) error {
 	defer sess.Close()
 
 	if !u.Active {
-		err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventPasswordChangeFailed, AuditReasonUserInactive)
-		if err != nil {
-			return err
+		err2 := m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventPasswordChangeFailed, AuditReasonUserInactive)
+		if err2 != nil {
+			return err2
 		}
 		return ErrUserInactive
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(old))
-	if err != nil {
-		err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventPasswordChangeFailed, AuditReasonInvalidPassword)
-		if err != nil {
-			return err
+	if verify {
+		if old != u.VerificationCode {
+			return ErrInvalidPassword
 		}
-		return ErrInvalidPassword
+	} else {
+		err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(old))
+		if err != nil {
+			err2 := m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventPasswordChangeFailed, AuditReasonInvalidPassword)
+			if err2 != nil {
+				return err2
+			}
+			return ErrInvalidPassword
+		}
 	}
 
 	b, err := bcrypt.GenerateFromPassword([]byte(new), 0)
@@ -167,7 +180,10 @@ func (m *MongoDB) ChangePassword(email, old, new string) error {
 		return err
 	}
 
-	err = sess.DB("florence").C("users").Update(bson.M{"_id": u.ID}, bson.M{"$set": bson.M{"password": b, "force_password_change": false}})
+	err = sess.DB("florence").C("users").Update(bson.M{"_id": u.ID}, bson.M{
+		"$set":   bson.M{"password": b, "force_password_change": false},
+		"$unset": bson.M{"verification_code": ""},
+	})
 	if err != nil {
 		return err
 	}
@@ -180,13 +196,27 @@ func (m *MongoDB) ChangePassword(email, old, new string) error {
 	return nil
 }
 
+// ValidateUserVerificationCode ...
+func (m *MongoDB) ValidateUserVerificationCode(code string) (ok bool, err error) {
+	sess := m.New()
+	defer sess.Close()
+
+	var u model.User
+	err = sess.DB("florence").C("users").Find(bson.M{"verification_code": code}).One(&u)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
 // ValidateLogin ...
 func (m *MongoDB) ValidateLogin(email, password string) (string, error) {
 	u, err := m.GetUser(email)
 	if err != nil {
-		err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, email, AuditEventUserLoginFailed, AuditReasonUserNotFound)
-		if err != nil {
-			return "", err
+		err2 := m.createAuditEvent(AuditSystemUser, AuditEventContextUser, email, AuditEventUserLoginFailed, AuditReasonUserNotFound)
+		if err2 != nil {
+			return "", err2
 		}
 		return "", err
 	}
@@ -195,26 +225,26 @@ func (m *MongoDB) ValidateLogin(email, password string) (string, error) {
 	defer sess.Close()
 
 	if !u.Active {
-		err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventUserLoginFailed, AuditReasonUserInactive)
-		if err != nil {
-			return "", err
+		err2 := m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventUserLoginFailed, AuditReasonUserInactive)
+		if err2 != nil {
+			return "", err2
 		}
 		return "", ErrUserInactive
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password))
 	if err != nil {
-		err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventUserLoginFailed, AuditReasonInvalidPassword)
-		if err != nil {
-			return "", err
+		err2 := m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventUserLoginFailed, AuditReasonInvalidPassword)
+		if err2 != nil {
+			return "", err2
 		}
 		return "", ErrInvalidPassword
 	}
 
 	if u.ForcePasswordChange {
-		err = m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventUserLoginFailed, AuditReasonPasswordChangeRequired)
-		if err != nil {
-			return "", err
+		err2 := m.createAuditEvent(AuditSystemUser, AuditEventContextUser, u.ID.Hex(), AuditEventUserLoginFailed, AuditReasonPasswordChangeRequired)
+		if err2 != nil {
+			return "", err2
 		}
 		return "", ErrForcePasswordChange
 	}

@@ -48,7 +48,7 @@ func main() {
 
 	floServer := &handlers.FloServer{DB: mongoDB}
 	authMw := auth.Middleware(mongoDB, true)
-	authMwMaybe := auth.Middleware(mongoDB, false)
+	//authMwMaybe := auth.Middleware(mongoDB, false)
 	adminMw := auth.WithPermission(mongoDB, model.PermAdministrator)
 
 	router := mux.NewRouter()
@@ -59,7 +59,7 @@ func main() {
 	var root = router
 
 	root.Methods("POST").Path("/login").HandlerFunc(floServer.Login)
-	root.Methods("POST").Path("/password").Handler(authMwMaybe(floServer.ChangePassword))
+	root.Methods("POST").Path("/password").HandlerFunc(floServer.ChangePassword)
 
 	root.Methods("GET").Path("/master/{uri:.*}").Handler(authMw(floServer.MasterData))
 

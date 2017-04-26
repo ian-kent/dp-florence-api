@@ -18,8 +18,15 @@ type userOutput struct {
 }
 
 type createUserInput struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	Name        string                     `json:"name"`
+	Email       string                     `json:"email"`
+	Permissions createUserInputPermissions `json:"permissions"`
+}
+
+type createUserInputPermissions struct {
+	Admin            bool `json:"admin"`
+	Editor           bool `json:"editor"`
+	DataVisPublisher bool `json:"dataVisPublisher"`
 }
 
 // ListUsers ...
@@ -112,6 +119,27 @@ func (s *FloServer) CreateUser(w http.ResponseWriter, req *http.Request) {
 	}
 
 	err := s.DB.CreateUser(creator.ID.Hex(), input.Email, input.Name)
+	if err != nil {
+		log.ErrorR(req, err, nil)
+		if err == data.ErrUserExists {
+			w.WriteHeader(400)
+			return
+		}
+		w.WriteHeader(500)
+		return
+	}
+
+	var roles []string
+
+	if input.Permissions.Admin {
+		roles = append(roles, "administrator")
+	}
+	if input.Permissions.Editor {
+		roles = append(roles, "editor")
+	}
+	// FIXME handle data vis users
+
+	err = s.DB.SetUserRoles(creator.ID.Hex(), input.Email, roles...)
 	if err != nil {
 		log.ErrorR(req, err, nil)
 		if err == data.ErrUserExists {

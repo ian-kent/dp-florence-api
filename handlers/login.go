@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/ONSdigital/dp-florence-api/data"
 	"github.com/ONSdigital/go-ns/log"
@@ -19,6 +20,20 @@ func (s *FloServer) Login(w http.ResponseWriter, req *http.Request) {
 	if err := unmarshal(req, &input); err != nil {
 		log.DebugR(req, "error reading body", log.Data{"error": err})
 		w.WriteHeader(400)
+		return
+	}
+
+	if strings.HasPrefix(input.Email, "<verify>:") {
+		// TODO this is a nasty hack, Florence could be refactored properly
+		// to handle user verification in a nicer way!
+		log.DebugR(req, "user verification", log.Data{"token": input.Password})
+		ok, err := s.DB.ValidateUserVerificationCode(input.Password)
+		if err != nil || ok != true {
+			log.DebugR(req, "error validating code", log.Data{"error": err})
+			w.WriteHeader(400)
+			return
+		}
+		w.WriteHeader(417)
 		return
 	}
 
